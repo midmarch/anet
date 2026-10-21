@@ -870,6 +870,15 @@ node {
 	download = true
 }
 
+tasks.register('printPlaywrightNode') {
+	dependsOn 'nodeSetup'
+	description = 'Prints the project-managed Node executable for browser test tooling.'
+	doLast {
+		String executable = OperatingSystem.current().isWindows() ? 'node.exe' : 'bin/node'
+		println "PLAYWRIGHT_NODE=${new File(node.resolvedNodeDir.get().asFile, executable)}"
+	}
+}
+
 tasks.register('prettierCheck', YarnTask) {
 	args = ["run", "prettier:check"]
 }

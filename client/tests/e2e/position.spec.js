@@ -1,21 +1,24 @@
 import { expect, fail, test } from "./support.js"
 
-// Position updates must stay in the same worker.
-test.describe.configure({
-  mode: "serial"
-})
-
-test("Move someone in and out of a position", async ({ app }) => {
+test("Move someone in and out of a position", async ({ app, data }) => {
   const { $, $$, assertElementText, mediumWaitMs } = app
 
-  // Login as rebecca (superuser).
-  await app.login("/", "rebecca")
+  const organization = await data.organization("Assignment workflow")
+  const actor = await data.actor("Assignment manager", organization, {
+    type: "SUPERUSER",
+    administrates: [organization]
+  })
+  const { person: member, position } = await data.actor(
+    "Assignment member",
+    organization
+  )
+  await app.login("/", actor)
   await app.pageHelpers.clickMenuLinksButton()
   await app.pageHelpers.clickMyOrgLink()
-  const positionName = "EF 2.2 Advisor C"
+  const positionName = position.name
   const positionRole = "Member"
-  const person = "Reina Reinton"
-  const personName = "CIV Reina Reinton"
+  const person = `${member.givenName} ${member.familyName}`
+  const personName = `${member.rank} ${person}`
   await app.pageHelpers.clickPersonNameFromSupportedPositionsFieldset(
     personName,
     positionName
@@ -85,9 +88,11 @@ test("Move someone in and out of a position", async ({ app }) => {
   const $assignCurrentPersonButton = await $("button.assign-current-person")
   await $assignCurrentPersonButton.click()
 
+  // Text search uses a periodically refreshed index; UUID lookup exposes a new
+  // fixture immediately and still exercises the assignment selector.
   const $assignedPerson = await app.pageHelpers.chooseAdvancedSelectOption(
     "#person",
-    person
+    member.uuid
   )
   await expect(
     $assignedPerson,
@@ -154,7 +159,7 @@ test("Move someone in and out of a position", async ({ app }) => {
   await app.logout()
 })
 
-test("Update permissions while changing positions", async ({ app }) => {
+test("Update permissions while changing positions", async ({ app, data }) => {
   const { $, assertElementText, mediumWaitMs } = app
   const testUserMapper = {
     admin: 0,
@@ -166,70 +171,42 @@ test("Update permissions while changing positions", async ({ app }) => {
 
   /* In order to grab the user and a specific attribute,
     follow the following format: testUsers[testUserMapper.reina].personName */
-  const testUsers = [
-    {
-      positionName: "EF 5 Admin",
-      person: "Michael Scott",
-      rank: "CIV",
-      personName: "CIV Michael Scott"
-    },
-    {
-      positionName: "EF 5.1 Advisor Quality Assurance",
-      person: "Creed Bratton ",
-      rank: "CIV",
-      personName: "CIV Creed Bratton"
-    },
-    {
-      positionName: "EF 5.1 Advisor Accounting",
-      person: "Kevin Malone",
-      rank: "CIV",
-      personName: "CIV Kevin Malone"
-    },
-    {
-      positionName: "EF 5.1 Superuser Sales 1",
-      person: "Jim Halpert",
-      rank: "CIV",
-      personName: "CIV Jim Halpert"
-    },
-    {
-      positionName: "EF 5.1 Superuser Sales 2",
-      person: "Dwight Schrute",
-      rank: "CIV",
-      personName: "CIV Dwight Schrute"
-    }
-  ]
-
-  // Helper function to navigate to the organization home page.
-  async function navigateOrganization(orgName) {
-    // Click on "Top-Level Organizations" dropdown menu.
-    const topLevelOrganizations = await app.page
-      .getByRole("button", {
-        name: "Top-level Organizations",
-        exact: true
-      })
-      .first()
-    // Click on the dropdown menu button.
-    await topLevelOrganizations.click()
-    // From the menu, select the desired organization.
-    const organization = await app.page.locator("a").all()
-    for (const org of organization) {
-      if ((await org.innerText()) === orgName) {
-        await org.click()
-        break
-      }
-    }
+  const organization = await data.organization("Permission transfer")
+  const child = await data.organization("Permission transfer child", {
+    parentOrg: { uuid: organization.uuid }
+  })
+  const administrator = await data.actor("Transfer admin", organization, {
+    type: "ADMINISTRATOR"
+  })
+  const testUsers = []
+  for (const [name, type] of [
+    ["Manager", "ADMINISTRATOR"],
+    ["First regular", "REGULAR"],
+    ["Second regular", "REGULAR"],
+    ["First superuser", "SUPERUSER"],
+    ["Second superuser", "SUPERUSER"]
+  ]) {
+    const { person, position } = await data.actor(name, child, { type })
+    testUsers.push({
+      uuid: person.uuid,
+      positionName: position.name,
+      person: `${person.givenName} ${person.familyName}`,
+      rank: person.rank,
+      personName: `${person.rank} ${person.givenName} ${person.familyName}`
+    })
   }
 
-  // Helper function to navigate to the sub-organization page.
-  async function navigateSubOrganization(subOrgName) {
-    // Navigate to sub organization
-    const subOrganizationLink = await app.page
-      .locator("a")
-      .filter({ hasText: subOrgName })
+  // Helper function to navigate to the organization home page.
+  async function navigateOrganization() {
+    await app.page.goto(`/organizations/${organization.uuid}`)
+    await app.waitForLoadingFinished()
+  }
+
+  async function navigateSubOrganization() {
+    await app.page
+      .locator(`a[href="/organizations/${child.uuid}"]`)
       .first()
-    // Click on the link of desired sub organization.
-    await subOrganizationLink.click()
-    // Wait for page to translate.
+      .click()
   }
 
   // Helper function to check if the user has the desired permission
@@ -254,15 +231,15 @@ test("Update permissions while changing positions", async ({ app }) => {
   }
 
   // Login as arthur (admin).
-  await app.login("/", "arthur")
+  await app.login("/", administrator)
   // Wait until page is loaded
 
   // ***********************************************
   // Removing a Superuser from a position and check if the position is converted to Regular position.
   // ***********************************************
 
-  await navigateOrganization("EF 5")
-  await navigateSubOrganization("EF 5.1")
+  await navigateOrganization()
+  await navigateSubOrganization()
 
   // Click to the given position name from the "Supported positions" div.
   await app.pageHelpers.clickPersonNameFromSupportedPositionsFieldset(
@@ -328,8 +305,8 @@ test("Update permissions while changing positions", async ({ app }) => {
   // Removing a Regular position from a position and check if the position remains as Regular position.
   // ***********************************************
 
-  await navigateOrganization("EF 5")
-  await navigateSubOrganization("EF 5.1")
+  await navigateOrganization()
+  await navigateSubOrganization()
 
   // Click to the given position name from the "Supported positions" div.
   await app.pageHelpers.clickPersonNameFromSupportedPositionsFieldset(
@@ -380,8 +357,8 @@ test("Update permissions while changing positions", async ({ app }) => {
   // converted to ANET Superuser and old position permission is converted to Regular position.
   // ***********************************************
 
-  await navigateOrganization("EF 5")
-  await navigateSubOrganization("EF 5.1")
+  await navigateOrganization()
+  await navigateSubOrganization()
 
   // Grab the specified position from the DOM.
   const positionButton = await app.page
@@ -398,7 +375,7 @@ test("Update permissions while changing positions", async ({ app }) => {
 
   await app.pageHelpers.chooseAdvancedSelectOption(
     "#person",
-    testUsers[testUserMapper.superuser_1].person
+    testUsers[testUserMapper.superuser_1].uuid
   )
   // Verify the option to Assign as additional position exists
   const $saveButtonAdditional = await app.page

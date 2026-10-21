@@ -1,4 +1,7 @@
 import { test as base, expect } from "@playwright/test"
+import { TestApi } from "../support/api.js"
+import { Authentication, ScenarioBrowser } from "../support/auth.js"
+import { TestData } from "../support/data.js"
 
 export { expect }
 
@@ -7,7 +10,41 @@ export function fail(message) {
 }
 
 export const test = base.extend({
-  app: async ({ page }, provide) => {
+  interactiveAuth: [false, { option: true }],
+  authentication: [
+    async ({ browser }, provide) => {
+      await provide(new Authentication(browser))
+    },
+    { scope: "worker" }
+  ],
+  api: [
+    // Playwright fixtures require a destructured dependency argument.
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, provide) => {
+      const api = await new TestApi().start()
+      try {
+        await provide(api)
+      } finally {
+        await api.close()
+      }
+    },
+    { scope: "worker" }
+  ],
+  data: async ({ api }, provide) => {
+    const data = new TestData(api)
+    try {
+      await provide(data)
+    } finally {
+      await data.close()
+    }
+  },
+  app: async (
+    { browser, authentication, interactiveAuth, data },
+    provide,
+    testInfo
+  ) => {
+    const scenario = new ScenarioBrowser(browser, authentication)
+    let page
     const $ = async selector => {
       const locator = page.locator(selector).first()
       await locator.waitFor({ state: "attached" })
@@ -18,18 +55,24 @@ export const test = base.extend({
       await locator.first().waitFor({ state: "attached" })
       return locator.all()
     }
+    // This dependency closes contexts before their data is archived.
     const app = {
-      page,
+      data,
+      get page() {
+        return page
+      },
       $,
       $$,
       shortWaitMs: 1000,
       mediumWaitMs: 3000,
       async login(pathname, user = "erin") {
-        await page.goto(pathname)
-        await page.locator("#username").fill(user)
-        await page.locator("#password").fill(user)
-        await page.locator("#kc-login").click()
-        await expect(page.locator("#kc-form-login")).toBeHidden()
+        page = await scenario.open(pathname, user, testInfo, interactiveAuth)
+        if (interactiveAuth) {
+          await page.locator("#username").fill(user)
+          await page.locator("#password").fill(user)
+          await page.locator("#kc-login").click()
+          await expect(page.locator("#kc-form-login")).toBeHidden()
+        }
         await app.waitForLoadingFinished()
         await expect(
           page.locator(".not-found-text").filter({
@@ -39,6 +82,11 @@ export const test = base.extend({
         ).toHaveCount(0)
       },
       async logout() {
+        if (!interactiveAuth) {
+          await scenario.reset()
+          page = undefined
+          return
+        }
         await page.goto("/api/logout")
         await page.locator("#kc-logout").click()
         await expect(page.locator("#kc-logout")).toBeHidden()
@@ -136,6 +184,11 @@ export const test = base.extend({
         await expect(page).toHaveURL(/\/people\/[0-9a-f-]+/)
       }
     }
-    await provide(app)
+    try {
+      await provide(app)
+    } finally {
+      await scenario.captureFailure(testInfo)
+      await scenario.close()
+    }
   }
 })

@@ -1,10 +1,45 @@
 import { expect } from "@playwright/test"
+import { TestData } from "../../../support/data.js"
 import SavedSearch from "../../pages/searchFilters/savedSearch.page.js"
 import { currentPage, test } from "../../support.js"
 
+let workflow
+let actor
+
+test.beforeAll(async ({ api }) => {
+  workflow = new TestData(api)
+  const organization = await workflow.organization("Saved searches")
+  actor = await workflow.actor("Saved searches", organization)
+})
+
+test.afterAll(async ({ api, scenario }) => {
+  await scenario.reset()
+  try {
+    if (actor) {
+      const { mySearches } = await api.graphql("{mySearches{uuid}}", {}, actor)
+      const results = await Promise.allSettled(
+        mySearches.map(search =>
+          api.graphql(
+            "mutation($uuid:String!){deleteSavedSearch(uuid:$uuid)}",
+            { uuid: search.uuid },
+            actor
+          )
+        )
+      )
+      const errors = results
+        .filter(result => result.status === "rejected")
+        .map(result => result.reason)
+      if (errors.length)
+        throw new AggregateError(errors, "Saved search cleanup failed")
+    }
+  } finally {
+    await workflow?.close()
+  }
+})
+
 test.describe("When trying to save a search", () => {
   test("Should show a successful toast message when the search is unique", async () => {
-    await SavedSearch.open()
+    await SavedSearch.open("/", actor)
     await SavedSearch.openOrganizationsFilter()
     await SavedSearch.addOrganizationToFilter("EF 1 | Planning")
     await SavedSearch.submitSearch()

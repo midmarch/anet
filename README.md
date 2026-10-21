@@ -32,4 +32,4 @@ Works created by U.S. Federal employees as part of their jobs typically are not 
 
 ## Browser regression tests
 
-The browser regression suite uses Playwright Test with Chromium. See [client-side testing](docs/dev-setup.md#client-side-tests) for service setup and commands. Both the default dictionary and `testDictionaries/no-custom-fields.yml` are exercised in CI.
+The browser regression suite uses Playwright Test with Chromium. See [client-side testing](docs/dev-setup.md#client-side-tests) for service setup and commands. Both the default dictionary and `testDictionaries/no-custom-fields.yml` are exercised in CI with two isolated shards per configuration. The setup guide also documents how to reproduce a shard and its seed-contract phase locally.

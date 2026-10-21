@@ -1,5 +1,12 @@
 import { expect } from "@playwright/test"
-import { currentPage, typeKeys, waitFor, waitUntil } from "../support.js"
+import {
+  currentPage,
+  endSession,
+  openAs,
+  typeKeys,
+  waitFor,
+  waitUntil
+} from "../support.js"
 
 class Page {
   static DEFAULT_CREDENTIALS = {
@@ -83,6 +90,7 @@ class Page {
   }
 
   async logout(resetRedux = false) {
+    if (await endSession()) return
     // Reset redux state before logout
     if (resetRedux) {
       await this.clickLogo()
@@ -105,11 +113,11 @@ class Page {
   }
 
   async _open(pathName, credentials) {
-    await currentPage().goto(pathName)
+    await openAs(pathName, credentials)
     // Wait for page load or login redirect
 
     if ((await (await this.getLoginForm()).count()) > 0) {
-      await this.login(credentials)
+      await this.login(credentials || Page.DEFAULT_CREDENTIALS.user)
       // Wait for login redirect
     }
     await waitFor(currentPage().locator("#topbar"), "visible", {
@@ -118,7 +126,7 @@ class Page {
     await this.waitUntilLoaded()
   }
 
-  async open(pathName = "/", credentials = Page.DEFAULT_CREDENTIALS.user) {
+  async open(pathName = "/", credentials) {
     await this._open(pathName, credentials)
   }
 

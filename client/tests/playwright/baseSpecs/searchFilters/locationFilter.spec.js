@@ -8,28 +8,22 @@ test.describe("When using the location filter on the reports search", () => {
     await LocationFilter.openLocationFilter()
     await LocationFilter.openLocationPopover()
 
-    // depending on the test run sequence, one more locations may have been created
-    await expect
-      .poll(async () => (await LocationFilter.getLocationRows()).count(), {
-        message: "Number of locations, searching for any location"
-      })
-      .toBeGreaterThanOrEqual(256)
-    await expect
-      .poll(async () => (await LocationFilter.getLocationRows()).count(), {
-        message: "Number of locations, searching for any location"
-      })
-      .toBeLessThanOrEqual(260)
+    // Exact counts in the fresh-seed phase; standalone runs can also include
+    // locations created by the dedicated creation and editing workflows.
+    const rows = await LocationFilter.getLocationRows()
+    if (process.env.PLAYWRIGHT_PHASE === "contracts") {
+      await expect(rows).toHaveCount(253)
+    } else {
+      await expect.poll(() => rows.count()).toBeGreaterThanOrEqual(253)
+      await expect.poll(() => rows.count()).toBeLessThanOrEqual(260)
+    }
     await LocationFilter.openAllCollapsedLocations()
-    await expect
-      .poll(async () => (await LocationFilter.getLocationRows()).count(), {
-        message: "Number of uncollapsed locations, searching for any location"
-      })
-      .toBeGreaterThanOrEqual(288)
-    await expect
-      .poll(async () => (await LocationFilter.getLocationRows()).count(), {
-        message: "Number of uncollapsed locations, searching for any location"
-      })
-      .toBeLessThanOrEqual(291)
+    if (process.env.PLAYWRIGHT_PHASE === "contracts") {
+      await expect(rows).toHaveCount(285)
+    } else {
+      await expect.poll(() => rows.count()).toBeGreaterThanOrEqual(285)
+      await expect.poll(() => rows.count()).toBeLessThanOrEqual(291)
+    }
   })
   test("Should show only the filtered locations", async () => {
     await LocationFilter.searchLocations("Mart")

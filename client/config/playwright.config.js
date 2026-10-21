@@ -1,5 +1,6 @@
 import { defineConfig } from "@playwright/test"
 import { getCommonConfig } from "./playwright-common.config.js"
+import { phaseConfig } from "./playwright-phases.js"
 
 const noCustomFields = process.env.TEST_PLAYWRIGHT_SUITE === "noCustomFields"
 const testName = `playwright${noCustomFields ? "-noCF" : ""}`
@@ -14,5 +15,6 @@ export default defineConfig({
   ],
   // Existing scenarios mutate seeded records and retain data between test cases.
   // Preserve file-level parallelism; do not parallelize cases within a file.
-  fullyParallel: false
+  fullyParallel: false,
+  ...phaseConfig()
 })

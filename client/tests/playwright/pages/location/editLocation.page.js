@@ -97,7 +97,7 @@ class EditLocation extends Page {
   }
 
   async open(locationId) {
-    await super.open(PAGE_URL.replace(":uuid", locationId))
+    await super.openAsAdminUser(PAGE_URL.replace(":uuid", locationId))
     await this.waitForEditLocationPageToLoad()
   }
 

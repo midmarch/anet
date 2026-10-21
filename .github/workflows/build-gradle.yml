@@ -32,6 +32,10 @@ jobs:
     - run: ./gradlew prettierCheck
     - run: ./gradlew yarn_run_lint
     - run: ./gradlew jar buildClient
+    - name: Check browser phase and shard coverage
+      run: python3 scripts/check-playwright-shards.py
+    - name: Check service readiness failure handling
+      run: python3 scripts/test_wait_for_test_services.py
 
   test-init:
     needs: build
@@ -52,7 +56,7 @@ jobs:
       - name: Start DB and Keycloak containers
         run: |
           ./gradlew -PtestEnv dockerCreateDB dockerStartDB dockerConfigureKeycloak dockerStartKeycloak
-          sleep 30
+          python3 scripts/wait-for-test-services.py db keycloak
       # This step should fail:
       - name: Run ANET init on empty database
         id: init-on-empty-db
@@ -99,7 +103,7 @@ jobs:
     - name: Start DB, Keycloak and SMTP containers
       run: |
         ./gradlew -PtestEnv dockerCreateDB dockerStartDB dockerConfigureKeycloak dockerStartKeycloak dockerCreateFakeSmtpServer dockerStartFakeSmtpServer
-        sleep 30
+        python3 scripts/wait-for-test-services.py db keycloak smtp
     - run: ./gradlew -PtestEnv test jacocoTestReport
     - run: ./gradlew yarn_run_server-junit-merge
     - name: Strip slashes from dictionary name
@@ -115,74 +119,116 @@ jobs:
 
   test-client:
     needs: build
-    name: Client tests; ${{ matrix.client-tests }}, ${{ matrix.dictionary }}
+    name: Client tests; ${{ matrix.suite }}, shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        dictionary: [anet-dictionary.yml]
-        client-tests: [jest, playwright, e2e]
         include:
-          - dictionary: testDictionaries/no-custom-fields.yml
-            client-tests: playwright-noCF
+          - { suite: jest, dictionary: anet-dictionary.yml, shard: 0 }
+          - { suite: playwright, dictionary: anet-dictionary.yml, shard: 1 }
+          - { suite: playwright, dictionary: anet-dictionary.yml, shard: 2 }
+          - {
+              suite: playwright-noCF,
+              dictionary: testDictionaries/no-custom-fields.yml,
+              shard: 1,
+            }
+          - {
+              suite: playwright-noCF,
+              dictionary: testDictionaries/no-custom-fields.yml,
+              shard: 2,
+            }
+          - { suite: e2e, dictionary: anet-dictionary.yml, shard: 1 }
+          - { suite: e2e, dictionary: anet-dictionary.yml, shard: 2 }
 
     env:
       ANET_DICTIONARY_NAME: ${{ matrix.dictionary }}
-      CLIENT_TESTS: ${{ matrix.client-tests }}
+      CLIENT_TESTS: ${{ matrix.suite }}
 
     steps:
     - uses: actions/checkout@v7
       with:
         fetch-depth: 0
     - uses: ./.github/actions/build-cache
-    - run: |
-        rm -rf client/build/test-results
-        mkdir -p client/build/test-results
-    - name: Start DB, Keycloak and SMTP containers
+    - name: Start isolated test services
       run: |
         ./gradlew -PtestEnv dockerCreateDB dockerStartDB dockerConfigureKeycloak dockerStartKeycloak dockerCreateFakeSmtpServer dockerStartFakeSmtpServer
-        sleep 30
-    - run: ./gradlew -PtestEnv checkConfig
-    - name: Start ANET and wait for readiness
+        python3 scripts/wait-for-test-services.py db keycloak smtp
+    - run: ./gradlew -PtestEnv checkConfig buildClient
+    - name: Start ANET for Jest
+      if: matrix.suite == 'jest'
       run: |
-        ./gradlew -PtestEnv run &
-        for attempt in {1..180}; do
-          if curl --fail --silent --header "Accept: text/html" --output /dev/null http://localhost:8180/; then
-            exit 0
-          fi
-          sleep 1
-        done
-        exit 1
+        ./gradlew -PtestEnv run > jest-server.log 2>&1 &
+        python3 scripts/wait-for-test-services.py db keycloak smtp app --app-pid "$!" --app-log jest-server.log
+    - name: Run Jest
+      if: matrix.suite == 'jest'
+      run: ./gradlew yarn_run_test-jest
     - name: Install Playwright Chromium
-      if: matrix.client-tests != 'jest'
+      if: matrix.suite != 'jest'
       run: ./gradlew yarn_run_install-playwright
-    - run: ./gradlew yarn_run_test-${CLIENT_TESTS}
-    - name: Strip slashes from dictionary name
-      id: strip-slashes
-      run: echo "dictionary=${ANET_DICTIONARY_NAME//\//_}" >> $GITHUB_OUTPUT
-      if: always()
-    - name: Upload Playwright diagnostics
-      if: always() && matrix.client-tests != 'jest'
+    - name: Run browser shard with fresh databases per phase
+      if: matrix.suite != 'jest'
+      run: python3 scripts/run-playwright-ci.py "$CLIENT_TESTS" --shard=${{ matrix.shard }}/2 --prepared
+    - name: Upload browser reports and diagnostics
+      if: always() && matrix.suite != 'jest'
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ matrix.client-tests }}-diagnostics for ${{ steps.strip-slashes.outputs.dictionary }}
+        name: ${{ matrix.suite }}-browser-${{ matrix.shard }}
         path: |
-          client/build/${{ matrix.client-tests }}-report
-          client/build/test-results/${{ matrix.client-tests }}-artifacts
+          client/build/blob-reports/*.zip
+          client/build/${{ matrix.suite }}-shard-*-report
+          client/build/test-results/${{ matrix.suite }}-shard-*
+          client/build/local-ci/${{ matrix.suite }}
+          client/build/playwright-fixtures-*-report
+          client/build/test-results/playwright-fixtures-*
+        if-no-files-found: ignore
+    - name: Upload Jest results
+      if: always() && matrix.suite == 'jest'
+      uses: actions/upload-artifact@v7
+      with:
+        name: jest-test-results
+        path: client/build/test-results/jest-test-results.xml
         if-no-files-found: ignore
     - name: Upload client log
+      if: always()
       uses: actions/upload-artifact@v7
       with:
-        name: ${{ matrix.client-tests }}-client-log for ${{ steps.strip-slashes.outputs.dictionary }}
+        name: ${{ matrix.suite }}-client-log-${{ matrix.shard }}
         path: logs/clientLog.log
         if-no-files-found: ignore
-      if: always()
-    - name: Upload test results
-      uses: actions/upload-artifact@v7
+
+  browser-report:
+    needs: test-client
+    if: always()
+    name: Merge browser reports; ${{ matrix.suite }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [playwright, playwright-noCF, e2e]
+    steps:
+    - uses: actions/checkout@v7
+    - uses: ./.github/actions/build-cache
+    - uses: actions/download-artifact@v8
       with:
-        name: ${{ matrix.client-tests }}-test-results for ${{ steps.strip-slashes.outputs.dictionary }}
-        path: client/build/test-results/${{ matrix.client-tests }}-test-results.xml
+        pattern: ${{ matrix.suite }}-browser-*
+        path: downloaded-reports
+        merge-multiple: true
+    - name: Collect blob reports
+      run: |
+        mkdir -p merged-blobs
+        find downloaded-reports -type f -name '${{ matrix.suite }}-shard-*.zip' -exec cp {} merged-blobs/ \;
+    - name: Merge HTML report
+      run: python3 scripts/playwright_node.py merge-reports --reporter=html ../merged-blobs
+      env:
+        PLAYWRIGHT_HTML_OPEN: never
+        PLAYWRIGHT_HTML_OUTPUT_DIR: build/merged-report
+    - uses: actions/upload-artifact@v7
       if: always()
+      with:
+        name: ${{ matrix.suite }}-merged-report
+        path: client/build/merged-report
+        if-no-files-found: ignore
 
   test-sim:
     needs: build
@@ -197,11 +243,11 @@ jobs:
     - name: Start DB and Keycloak containers
       run: |
         ./gradlew dockerCreateDB dockerStartDB dockerConfigureKeycloak dockerStartKeycloak
-        sleep 30
+        python3 scripts/wait-for-test-services.py db keycloak --profile dev
     - run: ./gradlew checkConfig
     - run: |
         ./gradlew run &
-        sleep 15
+        python3 scripts/wait-for-test-services.py db keycloak app --profile dev --app-pid "$!"
     - run: ./gradlew yarn_run_sim
       env:
         TEST_RUN: true

@@ -52,39 +52,39 @@ test.describe("My events page", () => {
     test("Should see a summary of the events for the user", async () => {
       await MyEvents.selectEventsSummary()
       // Validate some fields
-      const nmiEventIdx = 5
+      const nmiEventName = "NMI PDT 2024-01"
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 1, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 1, 1)
       ).toHaveText("Name: NMI PDT 2024-01", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 2, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 2, 1)
       ).toHaveText("Type: Conference", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 5, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 5, 1)
       ).toHaveText("Owner Organization:\nEF 2.2", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 6, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 6, 1)
       ).toHaveText("Hosts:\nEF 2.2", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 7, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 7, 1)
       ).toHaveText("Admin Organization:\nEF 2.2", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 8, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 8, 1)
       ).toHaveText("Event Series this event belongs to:\nNMI PDT", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 9, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 9, 1)
       ).toHaveText(
         "Location where the event takes place:\nGeneral Hospital Point location",
         {
@@ -92,17 +92,17 @@ test.describe("My events page", () => {
         }
       )
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 10, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 10, 1)
       ).toHaveText("Objectives:\nEF 1\n»\nEF 1.2\n»\n1.2.B", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 11, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 11, 1)
       ).toHaveText("Organizations attending:\nEF 2.2", {
         useInnerText: true
       })
       await expect(
-        await MyEvents.getEventSummarySpan(nmiEventIdx, 12, 1)
+        await MyEvents.getEventSummarySpan(nmiEventName, 12, 1)
       ).toHaveText("People attending:\nCIV Erin Erinson", {
         useInnerText: true
       })

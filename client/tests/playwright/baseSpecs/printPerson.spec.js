@@ -1,6 +1,4 @@
 import { expect } from "@playwright/test"
-import Home from "../pages/home.page.js"
-import Search from "../pages/search.page.js"
 import ShowPerson from "../pages/showPerson.page.js"
 import { test, waitFor } from "../support.js"
 
@@ -46,14 +44,7 @@ const PRESET_WITHOUT_SENSITIVE_LABELS = [
 ]
 test.describe("Show person page", () => {
   test.beforeEach("Should have print button", async () => {
-    await Home.openAsAdminUser()
-    await (await Home.getSearchBar()).fill("Roger Rogwell")
-    await (await Home.getSubmitSearch()).click()
-    await waitFor(await Search.getFoundPeopleTable(), "attached", {
-      timeout: 20000
-    })
-    await waitFor(await Search.getFoundPeopleTable(), "visible")
-    await (await Search.linkOfPersonFound("Roger")).click()
+    await ShowPerson.openAsAdminUser("6866ce4d-1f8c-4f78-bdc2-4767e9a859b0")
     await (await ShowPerson.getCompactViewButton()).click()
     await waitFor(await ShowPerson.getCompactView(), "visible")
   })

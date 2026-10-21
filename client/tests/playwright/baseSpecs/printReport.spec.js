@@ -1,6 +1,5 @@
 import { expect } from "@playwright/test"
 import Home from "../pages/home.page.js"
-import MyReports, { REPORT_STATES } from "../pages/myReports.page.js"
 import ShowReport from "../pages/report/showReport.page.js"
 import { currentPage, test, waitFor } from "../support.js"
 
@@ -20,11 +19,7 @@ const TASKS_WITH_ASSESSMENTS = TASKS.map(task => task.join("\n»\n"))
 const DEFAULT_REPORT_CLASSIFICATION = "DEMO USE ONLY"
 test.describe("Show print report page", () => {
   test.beforeEach("Open the show report page", async () => {
-    await MyReports.open("arthur")
-    await MyReports.selectReport(
-      "A test report from Arthur",
-      REPORT_STATES.PUBLISHED
-    )
+    await ShowReport.openAsAdminUser("59be259b-30b9-4d04-9e21-e8ceb58cbe9c")
     await (await ShowReport.getCompactViewButton()).click()
     await waitFor(await ShowReport.getCompactView(), "visible")
   })
@@ -249,11 +244,7 @@ test.describe("Show print report page", () => {
 const REPORT_CLASSIFICATION = "NATO UNCLASSIFIED"
 test.describe("Show print report page with classification", () => {
   test.beforeEach("Open the show report page", async () => {
-    await MyReports.open("arthur")
-    await MyReports.selectReport(
-      "A classified report from Arthur",
-      REPORT_STATES.DRAFT
-    )
+    await ShowReport.openAsAdminUser("c3008f90-6a27-4343-b278-827a0a0dc6bf")
     await (await ShowReport.getCompactViewButton()).click()
     await waitFor(await ShowReport.getCompactView(), "visible")
   })

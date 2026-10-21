@@ -3,35 +3,16 @@ import CreateNewLocation from "../pages/location/createNewLocation.page.js"
 import EditLocation from "../pages/location/editLocation.page.js"
 import ShowLocation from "../pages/location/showLocation.page.js"
 import { test, waitFor } from "../support.js"
-import {
-  LOCATION_COORDS,
-  LOCATION_NAME,
-  LOCATION_TYPE,
-  NEW_COORDS
-} from "./locationUtils.js"
+import { LOCATION_COORDS, LOCATION_TYPE, NEW_COORDS } from "./locationUtils.js"
 
 test.describe("When editing a location", () => {
-  test.beforeEach("Should create a new location first", async () => {
-    await CreateNewLocation.open()
-    await (await CreateNewLocation.getNameField()).fill(String(LOCATION_NAME))
-    await (
-      await CreateNewLocation.getTypeField()
-    ).selectOption({
-      index: LOCATION_TYPE.index
+  test.beforeEach("Open an owned location", async ({ data }) => {
+    const location = await data.location("Edit coordinates", {
+      type: LOCATION_TYPE.type,
+      lat: Number(LOCATION_COORDS.lat),
+      lng: Number(LOCATION_COORDS.lng)
     })
-    await (
-      await CreateNewLocation.getLatField()
-    ).fill(String(LOCATION_COORDS.lat))
-    await (
-      await CreateNewLocation.getLngField()
-    ).fill(String(LOCATION_COORDS.lng))
-    // trigger onblur effect
-    await (await CreateNewLocation.getNameField()).click()
-    await (await CreateNewLocation.getCreateButton()).click()
-    // We are sent to showLocation page
-    await waitFor(await ShowLocation.getSuccessMsg(), "visible")
-    await (await ShowLocation.getEditButton()).click()
-    // Now we are in the edit page
+    await EditLocation.open(location.uuid)
   })
   test.describe("When on the edit page of a location", () => {
     test("Should see the correct location type value of the created location", async () => {

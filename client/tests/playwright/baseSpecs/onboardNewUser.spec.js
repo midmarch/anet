@@ -1,5 +1,6 @@
 import { expect } from "@playwright/test"
 import moment from "moment"
+import { TestData } from "../../support/data.js"
 import OnboardPage from "../pages/onboard.page.js"
 import { currentPage, test, waitFor } from "../support.js"
 
@@ -10,6 +11,36 @@ const ONBOARD_USER = {
   emailAddresses: ["", "bonny@example.com"]
 }
 
+let workflow
+let identity
+
+test.beforeAll(async ({ api }) => {
+  workflow = new TestData(api)
+  identity = await workflow.identity("Bonny", {
+    firstName: ONBOARD_USER.givenName,
+    lastName: workflow.name("Bonnsdottir"),
+    email: `${workflow.namespace}-bonny@example.com`
+  })
+  ONBOARD_USER.familyName = identity.lastName
+  ONBOARD_USER.emailAddresses[1] = identity.email
+})
+
+test.afterAll(async ({ api, scenario }) => {
+  await scenario.reset()
+  try {
+    if (identity) {
+      const { me } = await api.graphql(
+        "{me{uuid updatedAt givenName familyName rank gender status pendingVerification user users{uuid domainUsername} country{uuid} emailAddresses{network address}}}",
+        {},
+        identity
+      )
+      if (me.uuid) workflow.own("person", me)
+    }
+  } finally {
+    await workflow?.close()
+  }
+})
+
 // Only required fields in onboarding/edit page
 const personDetails = {
   rank: "CIV",
@@ -19,7 +50,7 @@ const personDetails = {
 }
 test.describe("Onboard new user login", () => {
   test("Should show onboard welcome", async () => {
-    await OnboardPage.openAsOnboardUser(REPORT_URL)
+    await OnboardPage.openAsOnboardUser(REPORT_URL, identity.username)
     const welcomeText = "Welcome to ANET"
     await OnboardPage.waitForWelcomeMessage(welcomeText)
     await expect(await OnboardPage.getWelcomeText()).toHaveText(welcomeText, {

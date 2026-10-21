@@ -163,14 +163,17 @@ If you have updated the generated schema and need to update the generated Java c
 1. `./gradlew compileTestJava` to re-generate the Java sources *and* compile them into Java class files
 
 ### Client-side tests
+
 #### How the client-side tests work
+
 The browser regression suite uses Playwright Test with Chromium. Specs are multi-step scenarios: cases run sequentially and share a browser context within their spec; different specs have separate contexts and run in parallel. Do not enable `fullyParallel` without first making their browser and database state independent. Failed cases produce screenshots, traces, HTML reports, and JUnit results under `client/build`.
 
-The E2E suite (`test-e2e`) also uses Playwright, in a dedicated CI job with a separate database and server. Its scenarios share seed data; dependent scenarios declare serial groups. Both browser suites use the worker settings in `client/config/playwright-common.config.js` (overridable with `PLAYWRIGHT_WORKERS`) and run without retries.
+The E2E suite (`test-e2e`) also uses Playwright, with isolated CI shards. Only the dependent report approval steps run serially. Both browser suites use the worker settings in `client/config/playwright-common.config.js` (overridable with `PLAYWRIGHT_WORKERS`) and run without retries.
 
 The tests are reliant on the data looking pretty similar to what you'd get after a fresh run of `insertBaseData-psql.sql`. If the tests crash and do not complete, they could leave the data set in a state which would cause future test runs to fail. Make sure you start with a clean test-database.
 
 #### Prerequisites
+
 1. The tests always start with a clean test-database
 1. Start a test SMTP server (in a Docker container) in your local development environment: `./gradlew -PtestEnv dockerCreateFakeSmtpServer dockerStartFakeSmtpServer`
 1. In order to run the client-side tests you must start a server using the test-database: `./gradlew -PtestEnv run`
@@ -180,18 +183,39 @@ Run `./gradlew yarn_run_lint:fix` to automatically fix some kinds of lint errors
 Run `./gradlew yarn_run_prettier:format` to reformat the JavaScript code according to our style guide.
 
 #### Client-side testing locally
+
 To run the tests locally, make sure you have the server using the test-database running as above.
+
 1. Run the client side E2E tests against the test database: `./gradlew yarn_run_test-e2e`
 1. Install the Playwright Chromium browser: `./gradlew yarn_run_install-playwright`
 1. Run the client side Playwright tests against the test database: `./gradlew yarn_run_test-playwright`
 1. Run the client side jest tests against the test database: `./gradlew yarn_run_test-jest`
 1. Or run all client side tests against the test database: `./gradlew yarn_run_test-all`
 
-To reproduce the two regression browser CI jobs on Linux, run `./scripts/test-playwright-ci.sh` from the repository root. It starts the test services, installs Chromium, and runs both dictionary configurations with a fresh ANET server and test database for each. Keep port 8180 free before running it. Reports and server logs are retained under `client/build/local-ci`.
+CI runs two isolated shards for each browser configuration; Jest runs once. Reproduce a browser job from the repository root:
 
-Install Chromium before the first E2E run: `./gradlew yarn_run_install-playwright` (includes Linux system dependencies), or `./gradlew yarn_run_install-playwright-browser` if system dependencies are already installed.
+```sh
+./scripts/test-playwright-ci.sh playwright --shard=1/2
+./scripts/test-playwright-ci.sh playwright --shard=2/2 --prepared
+./scripts/test-playwright-ci.sh playwright-noCF --shard=1/2 --prepared
+./scripts/test-playwright-ci.sh playwright-noCF --shard=2/2 --prepared
+./scripts/test-playwright-ci.sh e2e --shard=1/2 --prepared
+./scripts/test-playwright-ci.sh e2e --shard=2/2 --prepared
+```
 
-The E2E configuration is `client/config/playwright-e2e.config.js`. Each E2E test gets a fresh browser context; the report approval scenarios run in a serial group because they depend on a report created by an earlier test.
+The tooling uses the Node executable configured by Gradle, including when Node is absent from PATH. Keep port 8180 free. The first command starts the dedicated test services, builds the client and installs Chromium and its Linux dependencies. `--prepared` reuses those prerequisites. Each invocation owns the ANET process and resets **the test database**. Run local shards sequentially; CI shards run on separate runners with their own database, backend, Keycloak and Mailpit. Use `--workers=5` to match CI concurrency.
+
+Regression shard 1 first runs exact-seed contracts with one worker, then restarts ANET with a fresh database for its scenarios. Shard 2 runs its scenarios against its own fresh database. Use `--phase=contracts` (regression shard 1 only) or `--phase=scenarios` to reproduce one phase. Postgres, the Keycloak realm, Mailpit HTTP/SMTP and ANET have readiness probes with a shared 180-second deadline per probe invocation; stopped services fail immediately with logs. There are no fixed startup delays.
+
+The E2E configuration is `client/config/playwright-e2e.config.js`. Each case gets a fresh context. Permission cases and the two position workflows own their users and graphs and run independently. Onboarding and saved-search regression workflows also use private identities. Report creation and approval remain one serial workflow in `approval.spec.js`, owning and cleaning up their report. Independent form validation runs separately in `report.spec.js`. E2E shard 2 also runs the shared authentication/API fixture checks from `playwright-support.config.js` before its scenarios.
+
+Authentication cookies are cached per worker and user in memory. New contexts restore only cookies, and verify the signed-in identity. Redux and local storage remain private to each workflow. Routine teardown closes contexts; `userLogin.spec.js` explicitly uses the real login and logout flow. In legacy page objects, `open()` keeps the current identity unless credentials are supplied; `openAsAdminUser()` and other explicit role methods select that identity.
+
+Use the GraphQL factories in `client/tests/support/data.js` for setup unrelated to the behavior under test. Factories create namespaced records and Keycloak identities, register each successful creation immediately, and archive records/delete reports and identities in teardown, including after partial setup failures. Seed references used by factories are read-only. Use UUIDs to open new records and to select newly created people: full-text search uses a periodically refreshed materialized view. Keep UI creation/navigation coverage in dedicated scenarios. Existing regression files retain their dependent cases and file-level scheduling; do not enable `fullyParallel` for that suite.
+
+Factories use the local Keycloak server's master administrator (`admin`/`admin` by default). Override `TEST_KEYCLOAK_ADMIN` and `TEST_KEYCLOAK_ADMIN_PASSWORD` for a custom test administrator; `ANET_KEYCLOAK_URL` and `ANET_KEYCLOAK_REALM` select the test authority and realm.
+
+JUnit, HTML, screenshots and traces include suite/shard/phase names. CI uploads diagnostics even on failure and merges blob reports into one HTML report per browser configuration. Local server logs and phase timings are under `client/build/local-ci/<suite>/<shard>`; Playwright reports and artifacts are under `client/build` and `client/build/test-results`. The [coverage inventory](playwright-coverage.md) maps the permission split and lists the seed contracts. Run `python3 scripts/check-playwright-shards.py` to verify that all cases occur in exactly one phase/shard; it writes the full case inventory to `client/build/throughput/coverage.json`.
 
 Use `expect` from `@playwright/test` in both browser suites. Page objects should expose locators for assertions: prefer `await expect(locator).toHaveText(...)`, `toHaveValue(...)`, and `toHaveCount(...)` over asserting captured text or arrays. Use `toHaveURL` and `toHaveTitle` for navigation checks. Reserve `expect.poll` for computed conditions without a matching locator assertion, and keep its callbacks free of actions such as opening a filter.
 

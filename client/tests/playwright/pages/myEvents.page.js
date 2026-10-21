@@ -36,12 +36,12 @@ class MyEvents extends Page {
     await super.waitUntilLoaded()
   }
 
-  async getEventsSummaryItem(summaryItem) {
+  async getEventsSummaryItem(eventName) {
     return currentPage()
-      .locator(
-        `#my-events .event-collection .event-summary:nth-child(${summaryItem})`
-      )
-      .first()
+      .locator("#my-events .event-collection .event-summary")
+      .filter({
+        has: currentPage().getByText(`Name: ${eventName}`, { exact: true })
+      })
   }
 
   async getEventSummaryLine(summaryItem, summaryLine) {

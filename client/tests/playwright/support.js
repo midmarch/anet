@@ -1,42 +1,65 @@
 import { test as base, expect } from "@playwright/test"
+import { TestApi } from "../support/api.js"
+import { Authentication, ScenarioBrowser } from "../support/auth.js"
+import { TestData } from "../support/data.js"
 
-// Page objects are shared within a worker; tests in each file run sequentially.
-// Each spec receives its own browser context from Playwright.
-let activePage
+let activeScenario
+let activeInfo
+let interactive
 export const test = base.extend({
-  scenario: [
+  interactiveAuth: [false, { option: true }],
+  authentication: [
     async ({ browser }, provide) => {
-      const scenario = { context: undefined, page: undefined, file: undefined }
+      await provide(new Authentication(browser))
+    },
+    { scope: "worker" }
+  ],
+  api: [
+    // Playwright fixtures require a destructured dependency argument.
+    // eslint-disable-next-line no-empty-pattern
+    async ({}, provide) => {
+      const api = await new TestApi().start()
       try {
-        await provide(scenario)
+        await provide(api)
       } finally {
-        await scenario.context?.close()
+        await api.close()
       }
     },
     { scope: "worker" }
   ],
-  page: async ({ scenario, browser }, provide, testInfo) => {
-    // Existing multi-step scenarios share a page within each spec.
-    // Reset browser state when the worker moves to another spec file.
-    if (scenario.file !== testInfo.file) {
-      await scenario.context?.close()
-      scenario.context = await browser.newContext({
-        baseURL: testInfo.project.use.baseURL,
-        viewport: testInfo.project.use.viewport,
-        ignoreHTTPSErrors: true
-      })
-      scenario.page = await scenario.context.newPage()
-      scenario.file = testInfo.file
+  data: async ({ api }, provide) => {
+    const data = new TestData(api)
+    try {
+      await provide(data)
+    } finally {
+      await data.close()
     }
-    await provide(scenario.page)
   },
+  scenario: [
+    async ({ browser, authentication }, provide) => {
+      const scenario = new ScenarioBrowser(browser, authentication)
+      try {
+        await provide(scenario)
+      } finally {
+        await scenario.close()
+      }
+    },
+    { scope: "worker" }
+  ],
   bindPage: [
-    async ({ page }, provide) => {
-      activePage = page
+    async ({ scenario, interactiveAuth }, provide, testInfo) => {
+      if (scenario.file !== testInfo.file) {
+        await scenario.close()
+        scenario.file = testInfo.file
+      }
+      activeScenario = scenario
+      activeInfo = testInfo
+      interactive = interactiveAuth
       try {
         await provide()
       } finally {
-        activePage = undefined
+        await scenario.captureFailure(testInfo)
+        activeScenario = undefined
       }
     },
     { auto: true }
@@ -44,10 +67,19 @@ export const test = base.extend({
 })
 
 export function currentPage() {
-  if (!activePage) {
-    throw new Error("Page objects must be used inside a Playwright test")
-  }
-  return activePage
+  if (!activeScenario?.page)
+    throw new Error("Open a page inside a Playwright scenario first")
+  return activeScenario.page
+}
+
+export async function openAs(path, actor = activeScenario.user || "erin") {
+  return activeScenario.open(path, actor, activeInfo, interactive)
+}
+
+export async function endSession() {
+  if (interactive) return false
+  await activeScenario.reset()
+  return true
 }
 
 export async function waitFor(locator, state, options = {}) {

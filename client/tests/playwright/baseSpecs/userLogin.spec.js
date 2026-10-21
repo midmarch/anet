@@ -2,6 +2,8 @@ import { expect } from "@playwright/test"
 import Home from "../pages/home.page.js"
 import { currentPage, test } from "../support.js"
 
+test.use({ interactiveAuth: true })
+
 test.describe("Anet home page", () => {
   test("should be able to logout using the dropdown in header and login from logout page", async () => {
     await Home.open()

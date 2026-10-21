@@ -109,7 +109,11 @@ module.exports = defineConfig([
   },
 
   {
-    files: ["tests/playwright/**/*.js", "tests/e2e/**/*.js"],
+    files: [
+      "tests/playwright/**/*.js",
+      "tests/e2e/**/*.js",
+      "tests/support/**/*.js"
+    ],
     rules: {
       "no-restricted-imports": [
         "error",
