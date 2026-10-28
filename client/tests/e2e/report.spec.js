@@ -168,16 +168,11 @@ test("Draft and submit a report", async ({ app }) => {
     /\/reports\/[0-9a-f-]+/
   )
   testReportURL = new URL(app.page.url()).pathname
-  await app.page.reload()
-  await app.waitForLoadingFinished()
   await expect(app.page.locator("#report-text .editable")).toHaveText(
     "engagement details"
   )
   await expect(
-    app.page
-      .getByRole("heading", { name: "Sensitive information", exact: true })
-      .locator("..")
-      .locator(".editable")
+    app.page.locator("#report-sensitive-information .editable")
   ).toHaveText("sensitive info")
   const $submitReportButton = await $("#submitReportButton")
   await $submitReportButton.click()
